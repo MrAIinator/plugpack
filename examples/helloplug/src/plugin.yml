@@ -1,0 +1,15 @@
+name: HelloPlug
+main: dev.mrainator.helloplug.HelloPlugin
+version: 1.0.0
+api-version: '1.21'
+description: Пример плагина для PlugPack
+author: PlugPack
+commands:
+  helloplug:
+    description: Проверка лоадера
+    usage: /helloplug
+    aliases: [hp]
+permissions:
+  helloplug.use:
+    description: Можно пинговать лоадер
+    default: true
