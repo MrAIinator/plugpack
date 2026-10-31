@@ -14,17 +14,19 @@ import java.util.Map;
 import java.util.UUID;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import dev.mrainator.plugpack.bridge.McItems;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.fml.loading.FMLPaths;
-import org.bukkit.Material;
 
 /**
  * Operator-only cuboid edit and region lock.
@@ -62,6 +64,22 @@ public final class OpTools {
                     .then(Commands.literal("copy").executes(ctx -> copy(player(ctx.getSource()))))
                     .then(Commands.literal("paste").executes(ctx -> paste(player(ctx.getSource())))));
         }
+        // WorldEdit writes //wand with no space. After the chat slash, Brigadier sees the name "/wand".
+        classic(dispatcher, "/wand", Commands.literal("/wand").requires(OpTools::op).executes(ctx -> wand(player(ctx.getSource()))));
+        classic(dispatcher, "/pos1", Commands.literal("/pos1").requires(OpTools::op).executes(ctx -> pos(player(ctx.getSource()), true)));
+        classic(dispatcher, "/pos2", Commands.literal("/pos2").requires(OpTools::op).executes(ctx -> pos(player(ctx.getSource()), false)));
+        classic(dispatcher, "/undo", Commands.literal("/undo").requires(OpTools::op).executes(ctx -> undo(player(ctx.getSource()))));
+        classic(dispatcher, "/copy", Commands.literal("/copy").requires(OpTools::op).executes(ctx -> copy(player(ctx.getSource()))));
+        classic(dispatcher, "/paste", Commands.literal("/paste").requires(OpTools::op).executes(ctx -> paste(player(ctx.getSource()))));
+        classic(dispatcher, "/set", Commands.literal("/set").requires(OpTools::op)
+                .then(Commands.argument("block", StringArgumentType.word())
+                        .executes(ctx -> set(player(ctx.getSource()), StringArgumentType.getString(ctx, "block"), null))));
+        classic(dispatcher, "/replace", Commands.literal("/replace").requires(OpTools::op)
+                .then(Commands.argument("from", StringArgumentType.word())
+                        .then(Commands.argument("to", StringArgumentType.word())
+                                .executes(ctx -> set(player(ctx.getSource()),
+                                        StringArgumentType.getString(ctx, "to"),
+                                        StringArgumentType.getString(ctx, "from"))))));
         var region = Commands.literal("region")
                 .requires(OpTools::op)
                 .executes(ctx -> list(player(ctx.getSource())))
@@ -76,6 +94,10 @@ public final class OpTools {
                 dispatcher.register(Commands.literal("rg").redirect(regionNode));
             }
         }
+    }
+
+    private static void classic(CommandDispatcher<CommandSourceStack> dispatcher, String name, LiteralArgumentBuilder<CommandSourceStack> command) {
+        if (dispatcher.getRoot().getChild(name) == null) dispatcher.register(command);
     }
 
     public static boolean onAxe(ServerPlayer player, BlockPos pos, boolean left) {
@@ -130,20 +152,20 @@ public final class OpTools {
         if (player == null) return 0;
         Selection selection = ready(player);
         if (selection == null) return 0;
-        Material to = material(toName);
-        Material from = fromName == null ? null : material(fromName);
-        if (to == null || !to.isBlock() || (fromName != null && (from == null || !from.isBlock()))) {
-            tell(player, "Нужен id блока, например stone или oak_planks.");
+        Block to = blockOf(toName);
+        Block from = fromName == null ? null : blockOf(fromName);
+        if (to == null || (fromName != null && from == null)) {
+            tell(player, "Имя блока, как в WorldEdit: stone, oak_planks, air. Цифры не нужны.");
             return 0;
         }
-        BlockState state = McItems.stateOf(to);
+        BlockState state = to.defaultBlockState();
         List<Change> changes = new ArrayList<>();
         int count = 0;
         ServerLevel level = player.serverLevel();
         for (BlockPos pos : BlockPos.betweenClosed(selection.min(), selection.max())) {
             BlockState old = level.getBlockState(pos);
-            if (from != null && McItems.materialOf(old) != from) continue;
-            if (old == state) continue;
+            if (from != null && old.getBlock() != from) continue;
+            if (old.getBlock() == to) continue;
             changes.add(new Change(pos.immutable(), old));
             level.setBlockAndUpdate(pos, state);
             count++;
@@ -261,9 +283,23 @@ public final class OpTools {
         return selection;
     }
 
-    private static Material material(String name) {
-        if (name == null) return null;
-        return Material.matchMaterial(name.toLowerCase(Locale.ROOT).replace("minecraft:", ""));
+    private static Block blockOf(String name) {
+        if (name == null || name.isBlank()) return null;
+        String n = name.toLowerCase(Locale.ROOT).trim();
+        if (n.startsWith("minecraft:")) n = n.substring("minecraft:".length());
+        n = switch (n) {
+            case "wood", "planks" -> "oak_planks";
+            case "log" -> "oak_log";
+            case "leaves" -> "oak_leaves";
+            case "grass" -> "grass_block";
+            case "workbench" -> "crafting_table";
+            case "wool" -> "white_wool";
+            case "smooth_brick", "stonebrick" -> "stone_bricks";
+            default -> n.replace(' ', '_').replace('-', '_');
+        };
+        ResourceLocation id = ResourceLocation.tryParse("minecraft:" + n);
+        if (id == null) return null;
+        return BuiltInRegistries.BLOCK.getOptional(id).orElse(null);
     }
 
     private static void push(UUID id, List<Change> changes) {

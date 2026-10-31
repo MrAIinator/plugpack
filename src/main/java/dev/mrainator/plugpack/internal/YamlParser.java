@@ -89,8 +89,13 @@ public final class YamlParser {
 
     private static Object nested(List<Line> lines, int[] index, int indent, String rest) {
         if (rest.isEmpty() || rest.equals("|") || rest.equals(">")) {
-            if (index[0] >= lines.size() || lines.get(index[0]).indent <= indent) return "";
-            int child = lines.get(index[0]).indent;
+            if (index[0] >= lines.size()) return "";
+            Line next = lines.get(index[0]);
+            if (next.body.startsWith("-") && next.indent >= indent) {
+                return parseList(lines, index, next.indent);
+            }
+            if (next.indent <= indent) return "";
+            int child = next.indent;
             if (rest.equals("|") || rest.equals(">")) {
                 StringBuilder block = new StringBuilder();
                 while (index[0] < lines.size() && lines.get(index[0]).indent >= child) {
@@ -115,6 +120,15 @@ public final class YamlParser {
 
     private static Object scalar(String raw) {
         String text = raw.trim();
+        if (text.startsWith("[") && text.endsWith("]")) {
+            String inner = text.substring(1, text.length() - 1).trim();
+            if (inner.isEmpty()) return List.of();
+            List<Object> list = new ArrayList<>();
+            for (String part : inner.split(",")) {
+                if (!part.isBlank()) list.add(scalar(part.trim()));
+            }
+            return list;
+        }
         if ((text.startsWith("\"") && text.endsWith("\"")) || (text.startsWith("'") && text.endsWith("'"))) {
             return unquote(text);
         }

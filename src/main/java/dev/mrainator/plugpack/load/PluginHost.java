@@ -56,6 +56,7 @@ public final class PluginHost {
             return 0;
         }
         VaultBridge.install(server.plugins());
+        PlugPack.LOGGER.info("Scanning plugins in {}", folder.toAbsolutePath());
         List<Loaded> found = scan(folder);
         List<Loaded> ordered = order(found);
         for (Loaded plugin : ordered) {
@@ -145,13 +146,32 @@ public final class PluginHost {
                     loadedPlugin.loader = loader;
                     found.add(loadedPlugin);
                 } catch (Throwable thrown) {
-                    PlugPack.LOGGER.error("Failed to load {}", jar.getFileName(), thrown);
+                    PlugPack.LOGGER.error("Failed to load {}: {}", jar.getFileName(), reason(thrown));
                 }
             }
         } catch (IOException exception) {
             PlugPack.LOGGER.error("Failed to scan {}", folder, exception);
         }
         return found;
+    }
+
+    private static String reason(Throwable thrown) {
+        StringBuilder out = new StringBuilder();
+        Throwable cursor = thrown;
+        int guard = 0;
+        while (cursor != null && guard++ < 6) {
+            if (!out.isEmpty()) out.append(" <- ");
+            out.append(cursor.getClass().getSimpleName());
+            if (cursor.getMessage() != null && !cursor.getMessage().isBlank()) {
+                out.append(": ").append(cursor.getMessage());
+            }
+            cursor = cursor.getCause();
+        }
+        String text = out.toString();
+        if (text.contains("ProtocolLib") || text.contains("com.comphenix") || text.contains("nms") || text.contains("NMS")) {
+            text += ". PlugPack не умеет ProtocolLib, Paper и NMS. Такой плагин тут не заведётся.";
+        }
+        return text;
     }
 
     private static PluginDescriptionFile readDescription(Path jar) throws IOException {
