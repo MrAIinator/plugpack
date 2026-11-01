@@ -74,6 +74,10 @@ public final class OpTools {
         classic(dispatcher, "/set", Commands.literal("/set").requires(OpTools::op)
                 .then(Commands.argument("block", StringArgumentType.word())
                         .executes(ctx -> set(player(ctx.getSource()), StringArgumentType.getString(ctx, "block"), null))));
+        classic(dispatcher, "/ids", Commands.literal("/ids").requires(OpTools::op)
+                .executes(ctx -> ids(player(ctx.getSource()), 0))
+                .then(Commands.argument("from", StringArgumentType.word())
+                        .executes(ctx -> ids(player(ctx.getSource()), number(StringArgumentType.getString(ctx, "from"))))));
         classic(dispatcher, "/replace", Commands.literal("/replace").requires(OpTools::op)
                 .then(Commands.argument("from", StringArgumentType.word())
                         .then(Commands.argument("to", StringArgumentType.word())
@@ -155,7 +159,7 @@ public final class OpTools {
         Block to = blockOf(toName);
         Block from = fromName == null ? null : blockOf(fromName);
         if (to == null || (fromName != null && from == null)) {
-            tell(player, "Имя блока, как в WorldEdit: stone, oak_planks, air. Цифры не нужны.");
+            tell(player, "Цифра, как раньше: //set 1 камень, //set 4 булыжник, //set 17 бревно. Список: //ids");
             return 0;
         }
         BlockState state = to.defaultBlockState();
@@ -283,8 +287,24 @@ public final class OpTools {
         return selection;
     }
 
+    private static int ids(ServerPlayer player, int from) {
+        if (player == null) return 0;
+        tell(player, LegacyIds.catalog(from));
+        return 1;
+    }
+
+    private static int number(String raw) {
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
     private static Block blockOf(String name) {
         if (name == null || name.isBlank()) return null;
+        Block numbered = LegacyIds.parse(name);
+        if (numbered != null) return numbered;
         String n = name.toLowerCase(Locale.ROOT).trim();
         if (n.startsWith("minecraft:")) n = n.substring("minecraft:".length());
         n = switch (n) {
